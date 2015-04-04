@@ -29,6 +29,7 @@ import com.android.server.wm.WindowManagerService;
 import android.content.res.Resources;
 import android.graphics.Point;
 import android.os.SystemProperties;
+import android.os.Process;
 import android.net.LocalSocketAddress;
 import android.net.LocalSocket;
 import android.util.Slog;
@@ -119,6 +120,13 @@ final class ProcessList {
     // without empty apps being able to push them out of memory.
     static final int MIN_CACHED_APPS = 2;
 
+    // Min aging threshold in milliseconds to consider a B services for propagation to higher adj
+    static final int MIN_BSERVICE_AGING_TIME = SystemProperties.getInt("ro.sys.fw.bservice_age",5000);
+    // Threshold for B Services when in memory pressure
+    static final int BSERVICE_APP_THRESHOLD = SystemProperties.getInt("ro.sys.fw.bservice_limit",5);
+    // Enable B service aging propagation on memory pressure.
+    static final boolean ENABLE_B_SERVICE_PROPAGATION = SystemProperties.getBoolean("ro.sys.fw.bservice_enable",false);
+
     // The maximum number of cached processes we will keep around before killing them.
     // NOTE: this constant is *only* a control to not let us go too crazy with
     // keeping around processes on devices with large amounts of RAM.  For devices that
@@ -129,6 +137,16 @@ final class ProcessList {
     // processes and the number of those processes does not count against the cached
     // process limit.
     static final int MAX_CACHED_APPS = SystemProperties.getInt("ro.sys.fw.bg_apps_limit",32);
+    static final boolean USE_TRIM_SETTINGS =
+            SystemProperties.getBoolean("ro.sys.fw.use_trim_settings",true);
+    static final int EMPTY_APP_PERCENT = SystemProperties.getInt("ro.sys.fw.empty_app_percent",50);
+    static final int TRIM_EMPTY_PERCENT =
+            SystemProperties.getInt("ro.sys.fw.trim_empty_percent",100);
+    static final int TRIM_CACHE_PERCENT =
+            SystemProperties.getInt("ro.sys.fw.trim_cache_percent",100);
+    static final long TRIM_ENABLE_MEMORY =
+            SystemProperties.getLong("ro.sys.fw.trim_enable_memory",1073741824);
+    public static boolean allowTrim() { return Process.getTotalMemory() < TRIM_ENABLE_MEMORY ; }
 
     // We allow empty processes to stick around for at most 30 minutes.
     static final long MAX_EMPTY_TIME = 30*60*1000;
@@ -138,11 +156,25 @@ final class ProcessList {
 
     // The number of empty apps at which we don't consider it necessary to do
     // memory trimming.
-    static final int TRIM_EMPTY_APPS = MAX_EMPTY_APPS/2;
+    public static int computeTrimEmptyApps() {
+        if (USE_TRIM_SETTINGS && allowTrim()) {
+            return MAX_EMPTY_APPS*TRIM_EMPTY_PERCENT/100;
+        } else {
+            return MAX_EMPTY_APPS/2;
+        }
+    }
+    static final int TRIM_EMPTY_APPS = computeTrimEmptyApps();
 
     // The number of cached at which we don't consider it necessary to do
     // memory trimming.
-    static final int TRIM_CACHED_APPS = (MAX_CACHED_APPS-MAX_EMPTY_APPS)/3;
+    public static int computeTrimCachedApps() {
+        if (USE_TRIM_SETTINGS && allowTrim()) {
+            return MAX_CACHED_APPS*TRIM_CACHE_PERCENT/100;
+        } else {
+            return (MAX_CACHED_APPS-MAX_EMPTY_APPS)/3;
+        }
+    }
+    static final int TRIM_CACHED_APPS = computeTrimCachedApps();
 
     // Threshold of number of cached+empty where we consider memory critical.
     static final int TRIM_CRITICAL_THRESHOLD = 3;
@@ -166,6 +198,17 @@ final class ProcessList {
     private final int[] mOomAdj = new int[] {
             FOREGROUND_APP_ADJ, VISIBLE_APP_ADJ, PERCEPTIBLE_APP_ADJ,
             BACKUP_APP_ADJ, CACHED_APP_MIN_ADJ, CACHED_APP_MAX_ADJ
+    };
+
+    // These are the low-end OOM level limits for 32bit
+    private final int[] mOomMinFreeLow32Bit = new int[] {
+            8192, 12288, 16384,
+            24576, 28672, 32768
+    };
+    // These are the high-end OOM level limits for 32bit
+    private final int[] mOomMinFreeHigh32Bit = new int[] {
+            49152, 61440, 73728,
+            86016, 98304, 122880
     };
     // These are the low-end OOM level limits.  This is appropriate for an
     // HVGA or smaller phone with less than 512MB.  Values are in KB.
@@ -217,7 +260,7 @@ final class ProcessList {
     private void updateOomLevels(int displayWidth, int displayHeight, boolean write) {
         // Scale buckets from avail memory: at 300MB we use the lowest values to
         // 700MB or more for the top values.
-        float scaleMem = ((float)(mTotalMemMb-300))/(700-300);
+        float scaleMem = ((float)(mTotalMemMb-350))/(700-350);
 
         // Scale buckets from screen size.
         int minSize = 480*800;  //  384000
@@ -240,19 +283,37 @@ final class ProcessList {
             Slog.i("XXXXXX", "minfree_adj=" + minfree_adj + " minfree_abs=" + minfree_abs);
         }
 
-        if (Build.SUPPORTED_64_BIT_ABIS.length > 0) {
+        final boolean is64bit = Build.SUPPORTED_64_BIT_ABIS.length > 0;
+        if (is64bit) {
             // Increase the high min-free levels for cached processes for 64-bit
             mOomMinFreeHigh[4] = 225000;
             mOomMinFreeHigh[5] = 325000;
         }
 
         for (int i=0; i<mOomAdj.length; i++) {
-            if (ActivityManager.isLowRamDeviceStatic()) {
+            int low = 0;
+            int high = 0;
+
+            if (is64bit) {
+                // On 64 bit devices, we consume more baseline RAM, because 64 bit is cool!
+                // To avoid being all pagey and stuff, scale up the memory levels to
+                // give us some breathing room.
+                Slog.i("XXXXXX", "choosing minFree values for 64 Bit");
+                low = mOomMinFreeLow[i];
+                high = mOomMinFreeHigh[i];
+
+                mOomMinFree[i] = (int)(low + ((high-low)*scale));
+                // More scaling up not required yet
+                // mOomMinFree[i] = (3*mOomMinFree[i])/2;
+
+            } else if (ActivityManager.isLowRamDeviceStatic()) {
                 // Overwrite calculated LMK parameters with the low-tier tested/validated values
+                Slog.i("XXXXXX", "choosing minFree values for lowram");
                 mOomMinFree[i] = mOomMinFreeLowRam[i];
             } else {
-                int low = mOomMinFreeLow[i];
-                int high = mOomMinFreeHigh[i];
+                Slog.i("XXXXXX", "choosing minFree values for 32 Bit");
+                low = mOomMinFreeLow32Bit[i];
+                high = mOomMinFreeHigh32Bit[i];
                 mOomMinFree[i] = (int)(low + ((high-low)*scale));
             }
         }
@@ -312,7 +373,11 @@ final class ProcessList {
     }
 
     public static int computeEmptyProcessLimit(int totalProcessLimit) {
-        return totalProcessLimit/2;
+        if(USE_TRIM_SETTINGS && allowTrim()) {
+            return totalProcessLimit*EMPTY_APP_PERCENT/100;
+        } else {
+            return totalProcessLimit/2;
+        }
     }
 
     private static String buildOomTag(String prefix, String space, int val, int base) {
@@ -421,7 +486,10 @@ final class ProcessList {
         sb.append(ramKb);
     }
 
-    // The minimum amount of time after a state change it is safe ro collect PSS.
+    // How long after a state change that it is safe to collect PSS without it being dirty.
+    public static final int PSS_SAFE_TIME_FROM_STATE_CHANGE = 1000;
+
+    // The minimum time interval after a state change it is safe to collect PSS.
     public static final int PSS_MIN_TIME_FROM_STATE_CHANGE = 15*1000;
 
     // The maximum amount of time we want to go between PSS collections.
@@ -450,6 +518,21 @@ final class ProcessList {
 
     // The amount of time until PSS when a cached process stays in the same state.
     private static final int PSS_SAME_CACHED_INTERVAL = 30*60*1000;
+
+    // The minimum time interval after a state change it is safe to collect PSS.
+    public static final int PSS_TEST_MIN_TIME_FROM_STATE_CHANGE = 10*1000;
+
+    // The amount of time during testing until PSS when a process first becomes top.
+    private static final int PSS_TEST_FIRST_TOP_INTERVAL = 3*1000;
+
+    // The amount of time during testing until PSS when a process first goes into the background.
+    private static final int PSS_TEST_FIRST_BACKGROUND_INTERVAL = 5*1000;
+
+    // The amount of time during testing until PSS when an important process stays in same state.
+    private static final int PSS_TEST_SAME_IMPORTANT_INTERVAL = 10*1000;
+
+    // The amount of time during testing until PSS when a background process stays in same state.
+    private static final int PSS_TEST_SAME_BACKGROUND_INTERVAL = 15*1000;
 
     public static final int PROC_MEM_PERSISTENT = 0;
     public static final int PROC_MEM_TOP = 1;
@@ -508,16 +591,54 @@ final class ProcessList {
         PSS_SAME_CACHED_INTERVAL,       // ActivityManager.PROCESS_STATE_CACHED_EMPTY
     };
 
+    private static final long[] sTestFirstAwakePssTimes = new long[] {
+        PSS_TEST_FIRST_TOP_INTERVAL,        // ActivityManager.PROCESS_STATE_PERSISTENT
+        PSS_TEST_FIRST_TOP_INTERVAL,        // ActivityManager.PROCESS_STATE_PERSISTENT_UI
+        PSS_TEST_FIRST_TOP_INTERVAL,        // ActivityManager.PROCESS_STATE_TOP
+        PSS_TEST_FIRST_BACKGROUND_INTERVAL, // ActivityManager.PROCESS_STATE_IMPORTANT_FOREGROUND
+        PSS_TEST_FIRST_BACKGROUND_INTERVAL, // ActivityManager.PROCESS_STATE_IMPORTANT_BACKGROUND
+        PSS_TEST_FIRST_BACKGROUND_INTERVAL, // ActivityManager.PROCESS_STATE_BACKUP
+        PSS_TEST_FIRST_BACKGROUND_INTERVAL, // ActivityManager.PROCESS_STATE_HEAVY_WEIGHT
+        PSS_TEST_FIRST_BACKGROUND_INTERVAL, // ActivityManager.PROCESS_STATE_SERVICE
+        PSS_TEST_FIRST_BACKGROUND_INTERVAL, // ActivityManager.PROCESS_STATE_RECEIVER
+        PSS_TEST_FIRST_BACKGROUND_INTERVAL, // ActivityManager.PROCESS_STATE_HOME
+        PSS_TEST_FIRST_BACKGROUND_INTERVAL, // ActivityManager.PROCESS_STATE_LAST_ACTIVITY
+        PSS_TEST_FIRST_BACKGROUND_INTERVAL, // ActivityManager.PROCESS_STATE_CACHED_ACTIVITY
+        PSS_TEST_FIRST_BACKGROUND_INTERVAL, // ActivityManager.PROCESS_STATE_CACHED_ACTIVITY_CLIENT
+        PSS_TEST_FIRST_BACKGROUND_INTERVAL, // ActivityManager.PROCESS_STATE_CACHED_EMPTY
+    };
+
+    private static final long[] sTestSameAwakePssTimes = new long[] {
+        PSS_TEST_SAME_BACKGROUND_INTERVAL,  // ActivityManager.PROCESS_STATE_PERSISTENT
+        PSS_TEST_SAME_BACKGROUND_INTERVAL,  // ActivityManager.PROCESS_STATE_PERSISTENT_UI
+        PSS_TEST_SAME_IMPORTANT_INTERVAL,   // ActivityManager.PROCESS_STATE_TOP
+        PSS_TEST_SAME_IMPORTANT_INTERVAL,   // ActivityManager.PROCESS_STATE_IMPORTANT_FOREGROUND
+        PSS_TEST_SAME_IMPORTANT_INTERVAL,   // ActivityManager.PROCESS_STATE_IMPORTANT_BACKGROUND
+        PSS_TEST_SAME_IMPORTANT_INTERVAL,   // ActivityManager.PROCESS_STATE_BACKUP
+        PSS_TEST_SAME_IMPORTANT_INTERVAL,   // ActivityManager.PROCESS_STATE_HEAVY_WEIGHT
+        PSS_TEST_SAME_BACKGROUND_INTERVAL,  // ActivityManager.PROCESS_STATE_SERVICE
+        PSS_TEST_SAME_BACKGROUND_INTERVAL,  // ActivityManager.PROCESS_STATE_RECEIVER
+        PSS_TEST_SAME_BACKGROUND_INTERVAL,  // ActivityManager.PROCESS_STATE_HOME
+        PSS_TEST_SAME_BACKGROUND_INTERVAL,  // ActivityManager.PROCESS_STATE_LAST_ACTIVITY
+        PSS_TEST_SAME_BACKGROUND_INTERVAL,  // ActivityManager.PROCESS_STATE_CACHED_ACTIVITY
+        PSS_TEST_SAME_BACKGROUND_INTERVAL,  // ActivityManager.PROCESS_STATE_CACHED_ACTIVITY_CLIENT
+        PSS_TEST_SAME_BACKGROUND_INTERVAL,  // ActivityManager.PROCESS_STATE_CACHED_EMPTY
+    };
+
     public static boolean procStatesDifferForMem(int procState1, int procState2) {
         return sProcStateToProcMem[procState1] != sProcStateToProcMem[procState2];
     }
 
-    public static long computeNextPssTime(int procState, boolean first, boolean sleeping,
-            long now) {
-        final long[] table = sleeping
+    public static long minTimeFromStateChange(boolean test) {
+        return test ? PSS_TEST_MIN_TIME_FROM_STATE_CHANGE : PSS_MIN_TIME_FROM_STATE_CHANGE;
+    }
+
+    public static long computeNextPssTime(int procState, boolean first, boolean test,
+            boolean sleeping, long now) {
+        final long[] table = test
                 ? (first
-                        ? sFirstAwakePssTimes
-                        : sSameAwakePssTimes)
+                        ? sTestFirstAwakePssTimes
+                        : sTestSameAwakePssTimes)
                 : (first
                         ? sFirstAwakePssTimes
                         : sSameAwakePssTimes);

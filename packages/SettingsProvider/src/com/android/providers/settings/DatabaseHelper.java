@@ -73,11 +73,17 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     private static final String TAG = "SettingsProvider";
     private static final String DATABASE_NAME = "settings.db";
 
+    private static final int TYPE_NONE = -1;
+
     // Please, please please. If you update the database version, check to make sure the
     // database gets upgraded properly. At a minimum, please confirm that 'upgradeVersion'
     // is properly propagated through your change.  Not doing so will result in a loss of user
     // settings.
-    private static final int DATABASE_VERSION = 124;
+    private static final int DATABASE_VERSION = 125;
+
+    private static final String HEADSET = "_headset";
+    private static final String SPEAKER = "_speaker";
+    private static final String EARPIECE = "_earpiece";
 
     private Context mContext;
     private int mUserHandle;
@@ -1939,7 +1945,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 stmt = db.compileStatement("INSERT OR IGNORE INTO secure(name,value)"
                         + " VALUES(?,?);");
                 loadBooleanSetting(stmt, Secure.ADVANCED_MODE,
-                        R.bool.def_advanced_mode);
+                        com.android.internal.R.bool.config_advancedSettingsMode);
                 db.setTransactionSuccessful();
             } finally {
                 db.endTransaction();
@@ -1984,6 +1990,26 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 if (stmt != null) stmt.close();
             }
             upgradeVersion = 124;
+        }
+
+        if (upgradeVersion < 125) {
+            // Force enable advanced settings if the overlay defaults to true
+            if (mContext.getResources().getBoolean(
+                    com.android.internal.R.bool.config_advancedSettingsMode)) {
+                db.beginTransaction();
+                SQLiteStatement stmt = null;
+                try {
+                    stmt = db.compileStatement("INSERT OR REPLACE INTO secure(name,value)"
+                            + " VALUES(?,?);");
+                    loadBooleanSetting(stmt, Secure.ADVANCED_MODE,
+                            com.android.internal.R.bool.config_advancedSettingsMode);
+                    db.setTransactionSuccessful();
+                } finally {
+                    db.endTransaction();
+                    if (stmt != null) stmt.close();
+                }
+            }
+            upgradeVersion = 125;
         }
 
         // *** Remember to update DATABASE_VERSION above!
@@ -2318,6 +2344,10 @@ public class DatabaseHelper extends SQLiteOpenHelper {
      */
     private void loadVolumeLevels(SQLiteDatabase db) {
         SQLiteStatement stmt = null;
+        if (mContext.getResources().getBoolean(R.bool.def_custom_sys_volume)) {
+            loadCustomizedVolumeLevels(db);
+            return;
+        }
         try {
             stmt = db.compileStatement("INSERT OR IGNORE INTO system(name,value)"
                     + " VALUES(?,?);");
@@ -2342,6 +2372,97 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                     stmt,
                     Settings.System.VOLUME_BLUETOOTH_SCO,
                     AudioManager.DEFAULT_STREAM_VOLUME[AudioManager.STREAM_BLUETOOTH_SCO]);
+
+            // By default:
+            // - ringtones, notification, system and music streams are affected by ringer mode
+            // on non voice capable devices (tablets)
+            // - ringtones, notification and system streams are affected by ringer mode
+            // on voice capable devices (phones)
+            int ringerModeAffectedStreams = (1 << AudioManager.STREAM_RING) |
+                                            (1 << AudioManager.STREAM_NOTIFICATION) |
+                                            (1 << AudioManager.STREAM_SYSTEM) |
+                                            (1 << AudioManager.STREAM_SYSTEM_ENFORCED);
+            if (!mContext.getResources().getBoolean(
+                    com.android.internal.R.bool.config_voice_capable)) {
+                ringerModeAffectedStreams |= (1 << AudioManager.STREAM_MUSIC);
+            }
+            loadSetting(stmt, Settings.System.MODE_RINGER_STREAMS_AFFECTED,
+                    ringerModeAffectedStreams);
+
+            loadSetting(stmt, Settings.System.MUTE_STREAMS_AFFECTED,
+                    ((1 << AudioManager.STREAM_MUSIC) |
+                     (1 << AudioManager.STREAM_RING) |
+                     (1 << AudioManager.STREAM_NOTIFICATION) |
+                     (1 << AudioManager.STREAM_SYSTEM)));
+        } finally {
+            if (stmt != null) stmt.close();
+        }
+
+        loadVibrateWhenRingingSetting(db);
+    }
+
+    private void loadCustomizedVolumeLevels(SQLiteDatabase db) {
+        SQLiteStatement stmt = null;
+        try {
+            stmt = db.compileStatement("INSERT OR IGNORE INTO system(name,value)"
+                    + " VALUES(?,?);");
+
+            loadSetting(stmt, Settings.System.VOLUME_MUSIC,
+                    mContext.getResources().getInteger(R.integer.def_music_volume));
+            loadSetting(stmt, Settings.System.VOLUME_RING,
+                    mContext.getResources().getInteger(R.integer.def_ringtone_volume));
+            loadSetting(stmt, Settings.System.VOLUME_SYSTEM,
+                    mContext.getResources().getInteger(R.integer.def_system_volume));
+            loadSetting(
+                    stmt,
+                    Settings.System.VOLUME_VOICE,
+                    mContext.getResources().getInteger(R.integer.def_voice_call_volume));
+            loadSetting(stmt, Settings.System.VOLUME_ALARM,
+                    mContext.getResources().getInteger(R.integer.def_alarm_volume));
+            loadSetting(
+                    stmt,
+                    Settings.System.VOLUME_NOTIFICATION,
+                    mContext.getResources().getInteger(R.integer.def_notification_volume));
+            loadSetting(
+                    stmt,
+                    Settings.System.VOLUME_BLUETOOTH_SCO,
+                    mContext.getResources().getInteger(R.integer.def_bluetooth_sco_volume));
+
+            // set headset default volume
+            loadSetting(stmt, Settings.System.VOLUME_MUSIC + HEADSET,
+                    mContext.getResources().getInteger(R.integer.def_music_headset_volume));
+            loadSetting(stmt, Settings.System.VOLUME_RING + HEADSET,
+                    mContext.getResources().getInteger(R.integer.def_ringtone_headset_volume));
+            loadSetting(stmt, Settings.System.VOLUME_SYSTEM + HEADSET,
+                    mContext.getResources().getInteger(R.integer.def_system_headset_volume));
+            loadSetting(
+                    stmt,
+                    Settings.System.VOLUME_VOICE + HEADSET,
+                    mContext.getResources().getInteger(R.integer.def_voice_call_headset_volume));
+            loadSetting(stmt, Settings.System.VOLUME_ALARM + HEADSET,
+                    mContext.getResources().getInteger(R.integer.def_alarm_headset_volume));
+            loadSetting(
+                    stmt,
+                    Settings.System.VOLUME_NOTIFICATION + HEADSET,
+                    mContext.getResources().getInteger(R.integer.def_notification_headset_volume));
+            loadSetting(
+                    stmt,
+                    Settings.System.VOLUME_BLUETOOTH_SCO + HEADSET,
+                    mContext.getResources().getInteger(R.integer.def_bluetooth_sco_headset_volume));
+
+            // set speaker default volume
+            loadSetting(stmt, Settings.System.VOLUME_RING + SPEAKER,
+                    mContext.getResources().getInteger(R.integer.def_ringtone_speaker_volume));
+            loadSetting(
+                    stmt,
+                    Settings.System.VOLUME_VOICE + SPEAKER,
+                    mContext.getResources().getInteger(R.integer.def_voice_call_speaker_volume));
+
+            // set earpiece default volume
+            loadSetting(
+                    stmt,
+                    Settings.System.VOLUME_VOICE + EARPIECE,
+                    mContext.getResources().getInteger(R.integer.def_voice_call_earpiece_volume));
 
             // By default:
             // - ringtones, notification, system and music streams are affected by ringer mode
@@ -2476,14 +2597,26 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             loadIntegerSetting(stmt, Settings.System.POINTER_SPEED,
                     R.integer.def_pointer_speed);
 
+            loadStringSetting(stmt, Settings.System.TIME_12_24,
+                    R.string.def_time_format);
+
+            loadStringSetting(stmt, Settings.System.DATE_FORMAT,
+                    R.string.def_date_format);
+
             loadIntegerSetting(stmt, Settings.System.STATUS_BAR_NOTIF_COUNT,
                     R.integer.def_notif_count);
 
             loadIntegerSetting(stmt, Settings.System.STATUS_BAR_BATTERY_STYLE,
                     R.integer.def_battery_style);
 
+            loadIntegerSetting(stmt, Settings.System.ENABLE_FORWARD_LOOKUP,
+                    R.integer.def_forward_lookup);
+
             loadIntegerSetting(stmt, Settings.System.ENABLE_PEOPLE_LOOKUP,
                     R.integer.def_people_lookup);
+
+            loadIntegerSetting(stmt, Settings.System.ENABLE_REVERSE_LOOKUP,
+                    R.integer.def_reverse_lookup);
 
             loadIntegerSetting(stmt, Settings.System.QS_QUICK_PULLDOWN,
                     R.integer.def_qs_quick_pulldown);
@@ -2543,7 +2676,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
             // Allow mock locations default, based on build
             loadSetting(stmt, Settings.Secure.ALLOW_MOCK_LOCATION,
-                    "1".equals(SystemProperties.get("ro.allow.mock.location")) ? 1 : 0);
+                    "1".equals(SystemProperties.get("persist.env.c.allow.enable")) ? 1 : 0);
 
             loadSecure35Settings(stmt);
 
@@ -2629,11 +2762,28 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             loadIntegerSetting(stmt, Settings.Secure.SLEEP_TIMEOUT,
                     R.integer.def_sleep_timeout);
 
+            if (!TextUtils.isEmpty(mContext.getResources().getString(R.string.def_input_method))) {
+                loadStringSetting(stmt, Settings.Secure.DEFAULT_INPUT_METHOD,
+                        R.string.def_input_method);
+            }
+
+            if (!TextUtils.isEmpty(mContext.getResources().getString(
+                    R.string.def_enable_input_methods))) {
+                loadStringSetting(stmt, Settings.Secure.ENABLED_INPUT_METHODS,
+                        R.string.def_enable_input_methods);
+            }
+
+            // for accessibility enabled
+            loadStringSetting(stmt, Settings.Secure.ACCESSIBILITY_ENABLED,
+                    R.integer.def_enable_accessiblity);
+            loadStringSetting(stmt, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+                    R.string.def_enable_accessiblity_services);
+
             loadBooleanSetting(stmt, Settings.Secure.STATS_COLLECTION,
                     R.bool.def_cm_stats_collection);
 
             loadBooleanSetting(stmt, Settings.Secure.ADVANCED_MODE,
-                    R.bool.def_advanced_mode);
+                    com.android.internal.R.bool.config_advancedSettingsMode);
 
             loadDefaultThemeSettings(stmt);
             loadProtectedSmsSetting(stmt);
@@ -2668,6 +2818,23 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
             loadBooleanSetting(stmt, Settings.Global.ASSISTED_GPS_ENABLED,
                     R.bool.assisted_gps_enabled);
+
+            loadStringSetting(stmt, Settings.Global.ASSISTED_GPS_CONFIGURABLE_LIST,
+                    R.string.assisted_gps_configurable_list);
+
+            String[] gpsConfigValues = mContext.getResources().getStringArray(
+                    com.android.internal.R.array.config_gpsParameters);
+            for (String item : gpsConfigValues) {
+                String[] split = item.split("=");
+                if (split.length == 2) {
+                    String name = split[0].trim().toUpperCase();
+                    String value = split[1];
+                    if (name.equals("SUPL_HOST"))
+                        loadSetting(stmt, Settings.Global.ASSISTED_GPS_SUPL_HOST, value);
+                    else if (name.equals("SUPL_PORT"))
+                        loadSetting(stmt, Settings.Global.ASSISTED_GPS_SUPL_PORT, value);
+                }
+            }
 
             loadBooleanSetting(stmt, Settings.Global.AUTO_TIME,
                     R.bool.def_auto_time); // Sync time to NITZ
@@ -2704,10 +2871,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                     RILConstants.CDMA_CELL_BROADCAST_SMS_DISABLED);
 
             // Data roaming default, based on build
-            loadSetting(stmt, Settings.Global.DATA_ROAMING,
-                    "true".equalsIgnoreCase(
-                            SystemProperties.get("ro.com.android.dataroaming",
-                                    "false")) ? 1 : 0);
+            loadBooleanSetting(stmt, Settings.Global.DATA_ROAMING,
+                    R.bool.def_enable_data_roaming);
 
             loadBooleanSetting(stmt, Settings.Global.DEVICE_PROVISIONED,
                     R.bool.def_device_provisioned);
@@ -2727,22 +2892,19 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             }
 
             // Mobile Data default, based on build
-            loadSetting(stmt, Settings.Global.MOBILE_DATA,
-                    "true".equalsIgnoreCase(
-                            SystemProperties.get("ro.com.android.mobiledata",
-                                    "true")) ? 1 : 0);
+            loadBooleanSetting(stmt, Settings.Global.MOBILE_DATA,
+                    R.bool.def_enable_mobile_data);
 
+            int phoneCount = TelephonyManager.getDefault().getPhoneCount();
             // SUB specific flags for Multisim devices
             for (int phoneId = 0; phoneId < MAX_PHONE_COUNT; phoneId++) {
                 // Mobile Data default, based on build
-                loadSetting(stmt, Settings.Global.MOBILE_DATA + phoneId,
-                        "true".equalsIgnoreCase(
-                        SystemProperties.get("ro.com.android.mobiledata", "true")) ? 1 : 0);
+                loadBooleanSetting(stmt, Settings.Global.MOBILE_DATA + phoneId,
+                        R.bool.def_enable_mobile_data);
 
                 // Data roaming default, based on build
-                loadSetting(stmt, Settings.Global.DATA_ROAMING + phoneId,
-                        "true".equalsIgnoreCase(
-                        SystemProperties.get("ro.com.android.dataroaming", "true")) ? 1 : 0);
+                loadBooleanSetting(stmt, Settings.Global.DATA_ROAMING + phoneId,
+                        R.bool.def_enable_data_roaming);
             }
 
             loadBooleanSetting(stmt, Settings.Global.NETSTATS_ENABLED,
@@ -2779,6 +2941,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                     R.string.def_car_undock_sound);
             loadStringSetting(stmt, Settings.Global.WIRELESS_CHARGING_STARTED_SOUND,
                     R.string.def_wireless_charging_started_sound);
+            loadIntegerSetting(stmt, Settings.Global.DOCK_AUDIO_MEDIA_ENABLED,
+                    R.integer.def_dock_audio_media_enabled);
 
             loadIntegerSetting(stmt, Settings.Global.DOCK_AUDIO_MEDIA_ENABLED,
                     R.integer.def_dock_audio_media_enabled);
@@ -2793,12 +2957,17 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             // Set default cdma call auto retry
             loadSetting(stmt, Settings.Global.CALL_AUTO_RETRY, 0);
 
+            // Set default simplified carrier network settings to 0
+            loadSetting(stmt, Settings.Global.HIDE_CARRIER_NETWORK_SETTINGS, 0);
+
             // Set the preferred network mode to target desired value or Default
             // value defined in RILConstants
             int type;
-            int phoneCount = TelephonyManager.getDefault().getPhoneCount();
-            type = SystemProperties.getInt("ro.telephony.default_network",
+            type = SystemProperties.getInt("persist.radio.default_network", -1);
+            if (type == TYPE_NONE) {
+                type = SystemProperties.getInt("ro.telephony.default_network",
                         RILConstants.PREFERRED_NETWORK_MODE);
+            }
             String val = Integer.toString(type);
             for (int phoneId = 1; phoneId < phoneCount; phoneId++) {
                 val = val + "," + type;
