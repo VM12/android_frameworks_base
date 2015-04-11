@@ -2058,9 +2058,10 @@ public final class Settings {
         public static final String SHOW_ALARM_ICON = "show_alarm_icon";
 
         /**
-         * @hide	
-         */	
+         * Show or hide SU in StatusBar
+         */
         public static final String SHOW_SU_INDICATOR = "show_su_indicator";	
+		
         /**
          * Scaling factor for fonts, float.
          */
