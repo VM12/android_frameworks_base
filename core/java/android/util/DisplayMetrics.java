@@ -326,7 +326,7 @@ public class DisplayMetrics {
             ", xdpi=" + xdpi + ", ydpi=" + ydpi + "}";
     }
 
-   public static int getDeviceDensity() {
-       return DENSITY_CURRENT;
+    public static int getDeviceDensity() {
+        return DENSITY_CURRENT;
     }
 }

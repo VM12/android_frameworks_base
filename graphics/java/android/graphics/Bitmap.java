@@ -87,7 +87,7 @@ public final class Bitmap implements Parcelable {
      * @hide
      */
     public static void setDefaultDensity(int density) {
-       // Ignore
+        // Ignore
     }
 
     static int getDefaultDensity() {
