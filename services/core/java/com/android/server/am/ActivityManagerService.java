@@ -1831,7 +1831,7 @@ public final class ActivityManagerService extends ActivityManagerNative
                             context.getApplicationInfo().loadLabel(context.getPackageManager()));
                     String title = mContext.getString(R.string.privacy_guard_notification);
 
-                    Intent infoIntent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Intent infoIntent = new Intent(Settings.ACTION_APP_OPS_DETAILS_SETTINGS,
                             Uri.fromParts("package", root.packageName, null));
 
                     Notification notification = new Notification();
@@ -10531,6 +10531,7 @@ public final class ActivityManagerService extends ActivityManagerNative
 
     public void requestBugReport() {
         enforceCallingPermission(android.Manifest.permission.DUMP, "requestBugReport");
+        mContext.sendBroadcast(new Intent("android.intent.action.BUGREPORT_STARTED"));
         SystemProperties.set("ctl.start", "bugreport");
     }
 
