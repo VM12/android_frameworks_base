@@ -379,7 +379,6 @@ public class AudioService extends IAudioService.Stub {
     };
 
     private boolean mLinkNotificationWithVolume;
-    private final boolean mVoiceCapable;
 
     private final AudioSystem.ErrorCallback mAudioSystemCallback = new AudioSystem.ErrorCallback() {
         public void onError(int error) {
@@ -561,8 +560,6 @@ public class AudioService extends IAudioService.Stub {
 
     private AudioManagerInternal.RingerModeDelegate mRingerModeDelegate;
 
-    private boolean mVolumeKeysControlRingStream;
-
     ///////////////////////////////////////////////////////////////////////////
     // Construction
     ///////////////////////////////////////////////////////////////////////////
@@ -573,10 +570,8 @@ public class AudioService extends IAudioService.Stub {
         mContentResolver = context.getContentResolver();
         mAppOps = (AppOpsManager)context.getSystemService(Context.APP_OPS_SERVICE);
 
-        mVoiceCapable = context.getResources().getBoolean(
-                            com.android.internal.R.bool.config_voice_capable);
-
-        if (mVoiceCapable) {
+        if (mContext.getResources().getBoolean(
+                com.android.internal.R.bool.config_voice_capable)) {
             mPlatformType = PLATFORM_VOICE;
         } else if (context.getPackageManager().hasSystemFeature(
                                                             PackageManager.FEATURE_LEANBACK)) {
@@ -649,8 +644,9 @@ public class AudioService extends IAudioService.Stub {
         updateStreamVolumeAlias(false /*updateVolumes*/);
         readPersistedSettings();
         mSettingsObserver = new SettingsObserver();
+        //Update volumes steps before creatingStreamStates!
+        initVolumeSteps();
         createStreamStates();
-        updateNotificationStreamVolumeAlias();
 
         readAndSetLowRamDevice();
 
@@ -750,6 +746,60 @@ public class AudioService extends IAudioService.Stub {
 
         StreamOverride.init(mContext);
     }
+
+    private void initVolumeSteps(){
+        //Defaults for reference
+        //5,  // STREAM_VOICE_CALL
+        //7,  // STREAM_SYSTEM
+        //7,  // STREAM_RING
+        //15, // STREAM_MUSIC
+        //7,  // STREAM_ALARM
+        //7,  // STREAM_NOTIFICATION
+        //15, // STREAM_BLUETOOTH_SCO
+        //7,  // STREAM_SYSTEM_ENFORCED
+        //15, // STREAM_DTMF
+        //15  // STREAM_TTS
+
+                MAX_STREAM_VOLUME[AudioSystem.STREAM_VOICE_CALL] =
+                        Settings.System.getInt(mContentResolver, "volume_steps_voice_call",
+                                MAX_STREAM_VOLUME[AudioSystem.STREAM_VOICE_CALL]);
+
+                MAX_STREAM_VOLUME[AudioSystem.STREAM_SYSTEM] =
+                        Settings.System.getInt(mContentResolver, "volume_steps_system",
+                                MAX_STREAM_VOLUME[AudioSystem.STREAM_SYSTEM]);
+
+                MAX_STREAM_VOLUME[AudioSystem.STREAM_RING] =
+                        Settings.System.getInt(mContentResolver, "volume_steps_ring",
+                                MAX_STREAM_VOLUME[AudioSystem.STREAM_RING]);
+
+                MAX_STREAM_VOLUME[AudioSystem.STREAM_MUSIC] =
+                        Settings.System.getInt(mContentResolver, "volume_steps_music",
+                                MAX_STREAM_VOLUME[AudioSystem.STREAM_MUSIC]);
+
+                MAX_STREAM_VOLUME[AudioSystem.STREAM_ALARM] =
+                        Settings.System.getInt(mContentResolver, "volume_steps_alarm",
+                                MAX_STREAM_VOLUME[AudioSystem.STREAM_ALARM]);
+
+                MAX_STREAM_VOLUME[AudioSystem.STREAM_NOTIFICATION] =
+                        Settings.System.getInt(mContentResolver, "volume_steps_notification",
+                                MAX_STREAM_VOLUME[AudioSystem.STREAM_NOTIFICATION]);
+
+                MAX_STREAM_VOLUME[AudioSystem.STREAM_BLUETOOTH_SCO] =
+                        Settings.System.getInt(mContentResolver, "volume_steps_bluetooth_sco",
+                                MAX_STREAM_VOLUME[AudioSystem.STREAM_BLUETOOTH_SCO]);
+
+                MAX_STREAM_VOLUME[AudioSystem.STREAM_SYSTEM_ENFORCED] =
+                        Settings.System.getInt(mContentResolver, "volume_steps_system_enforced",
+                                MAX_STREAM_VOLUME[AudioSystem.STREAM_SYSTEM_ENFORCED]);
+
+                MAX_STREAM_VOLUME[AudioSystem.STREAM_DTMF] =
+                        Settings.System.getInt(mContentResolver, "volume_steps_dtmf",
+                                MAX_STREAM_VOLUME[AudioSystem.STREAM_DTMF]);
+
+                MAX_STREAM_VOLUME[AudioSystem.STREAM_TTS] =
+                        Settings.System.getInt(mContentResolver, "volume_steps_tts",
+                                MAX_STREAM_VOLUME[AudioSystem.STREAM_TTS]);
+       }
 
     private void createAudioSystemThread() {
         mAudioSystemThread = new AudioSystemThread();
@@ -954,7 +1004,11 @@ public class AudioService extends IAudioService.Stub {
 
         mStreamVolumeAlias[AudioSystem.STREAM_DTMF] = dtmfStreamAlias;
 
-        updateNotificationStreamVolumeAlias();
+        if (mLinkNotificationWithVolume) {
+            mStreamVolumeAlias[AudioSystem.STREAM_NOTIFICATION] = AudioSystem.STREAM_RING;
+        } else {
+            mStreamVolumeAlias[AudioSystem.STREAM_NOTIFICATION] = AudioSystem.STREAM_NOTIFICATION;
+        }
 
         if (updateVolumes) {
             mStreamStates[AudioSystem.STREAM_DTMF].setAllIndexes(mStreamStates[dtmfStreamAlias]);
@@ -966,14 +1020,6 @@ public class AudioService extends IAudioService.Stub {
                     0,
                     0,
                     mStreamStates[AudioSystem.STREAM_DTMF], 0);
-        }
-    }
-
-    private void updateNotificationStreamVolumeAlias() {
-        if (mLinkNotificationWithVolume && mVoiceCapable) {
-            mStreamVolumeAlias[AudioSystem.STREAM_NOTIFICATION] = AudioSystem.STREAM_RING;
-        } else {
-            mStreamVolumeAlias[AudioSystem.STREAM_NOTIFICATION] = AudioSystem.STREAM_NOTIFICATION;
         }
     }
 
@@ -1039,10 +1085,6 @@ public class AudioService extends IAudioService.Stub {
 
             updateRingerModeAffectedStreams();
             readDockAudioSettings(cr);
-
-            mVolumeKeysControlRingStream = Settings.System.getIntForUser(cr,
-                    Settings.System.VOLUME_KEYS_CONTROL_RING_STREAM, 1,
-                    UserHandle.USER_CURRENT) == 1;
         }
 
         mLinkNotificationWithVolume = Settings.Secure.getInt(cr,
@@ -1856,6 +1898,10 @@ public class AudioService extends IAudioService.Stub {
         return DEFAULT_STREAM_VOLUME[streamType];
     }
 
+    protected static void setMaxStreamVolume(int streamType, int maxVol) {
+                MAX_STREAM_VOLUME[streamType] = maxVol;
+    }
+
     /** @see AudioManager#getStreamVolume(int) */
     public int getStreamVolume(int streamType) {
         ensureValidStreamType(streamType);
@@ -1926,6 +1972,12 @@ public class AudioService extends IAudioService.Stub {
     public int getStreamMaxVolume(int streamType) {
         ensureValidStreamType(streamType);
         return (mStreamStates[streamType].getMaxIndex() + 5) / 10;
+    }
+    /** @see AudioManager#setStreamMaxVolume(int,int) */
+    public void setStreamMaxVolume(int streamType, int maxVol) {
+        ensureValidStreamType(streamType);
+        mStreamStates[streamType].setMaxIndex(maxVol);
+        setMaxStreamVolume(streamType,maxVol);
     }
 
     public int getMasterMaxVolume() {
@@ -3446,16 +3498,10 @@ public class AudioService extends IAudioService.Stub {
                     if (DEBUG_VOL)
                         Log.v(TAG, "getActiveStreamType: Forcing STREAM_MUSIC stream active");
                     return AudioSystem.STREAM_MUSIC;
-                } else {
-                    if (mVolumeKeysControlRingStream) {
+                    } else {
                         if (DEBUG_VOL)
                             Log.v(TAG, "getActiveStreamType: Forcing STREAM_RING b/c default");
                         return AudioSystem.STREAM_RING;
-                    } else {
-                        if (DEBUG_VOL)
-                            Log.v(TAG, "getActiveStreamType: Forcing STREAM_MUSIC b/c default");
-                        return AudioSystem.STREAM_MUSIC;
-                    }
                 }
             } else if (isAfMusicActiveRecently(0)) {
                 if (DEBUG_VOL)
@@ -3822,6 +3868,12 @@ public class AudioService extends IAudioService.Stub {
 
         public int getMaxIndex() {
             return mIndexMax;
+        }
+        public void setMaxIndex(int maxVol) {
+                         mIndexMax = maxVol;
+                         AudioSystem.initStreamVolume(mStreamType, 0, mIndexMax);
+             mIndexMax = maxVol;
+             mIndexMax *= 10;
         }
 
         public void setAllIndexes(VolumeStreamState srcStream) {
@@ -4619,9 +4671,7 @@ public class AudioService extends IAudioService.Stub {
             mContentResolver.registerContentObserver(Settings.Secure.getUriFor(
                     Settings.Secure.VOLUME_LINK_NOTIFICATION), false, this);
             mContentResolver.registerContentObserver(Settings.Global.getUriFor(
-                    Settings.Global.DOCK_AUDIO_MEDIA_ENABLED), false, this);
-            mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.VOLUME_KEYS_CONTROL_RING_STREAM), false, this);
+                Settings.Global.DOCK_AUDIO_MEDIA_ENABLED), false, this);
         }
 
         @Override
@@ -4647,12 +4697,7 @@ public class AudioService extends IAudioService.Stub {
                     mLinkNotificationWithVolume = linkNotificationWithVolume;
                     updateStreamVolumeAlias(true);
                     createStreamStates();
-                    createStreamStates();
-                    updateStreamVolumeAlias(true);
                 }
-                mVolumeKeysControlRingStream = Settings.System.getIntForUser(mContentResolver,
-                        Settings.System.VOLUME_KEYS_CONTROL_RING_STREAM, 1,
-                        UserHandle.USER_CURRENT) == 1;
             }
         }
     }

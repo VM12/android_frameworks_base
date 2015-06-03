@@ -34,7 +34,8 @@ import java.util.List;
 
 /**
  * Provides access to information about active calls and registration/call-management functionality.
- * Apps can use methods in this class to determine the current call state.
+ * Apps can use methods in this class to determine the current call state. Apps can also register new
+ * {@link PhoneAccount}s and get a listing of existing {@link PhoneAccount}s.
  * <p>
  * Apps do not instantiate this class directly; instead, they retrieve a reference to an instance
  * through {@link Context#getSystemService Context.getSystemService(Context.TELECOM_SERVICE)}.
@@ -930,10 +931,10 @@ public class TelecomManager {
      * Returns current active subscription.
      * @hide
      */
-    public int getActiveSubscription() {
+    public long getActiveSubscription() {
         try {
             if (isServiceConnected()) {
-                return (int)getTelecomService().getActiveSubscription();
+                return getTelecomService().getActiveSubscription();
             }
         } catch (RemoteException e) {
             Log.e(TAG, "RemoteException attempting to get the active subsription.", e);
@@ -945,7 +946,7 @@ public class TelecomManager {
      * switches to other active subscription.
      * @hide
      */
-    public void switchToOtherActiveSub(int subId) {
+    public void switchToOtherActiveSub(long subId) {
         try {
             if (isServiceConnected()) {
                 getTelecomService().switchToOtherActiveSub(subId);

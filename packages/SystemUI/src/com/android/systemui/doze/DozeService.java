@@ -219,7 +219,6 @@ public class DozeService extends DreamService {
             mPulsing = true;
             if (!mDozeParameters.getProxCheckBeforePulse() ||
                     reason == DozeLog.PULSE_REASON_INTENT) {
-            if (!mDozeParameters.getProxCheckBeforePulse(reason)) {
                 // skip proximity check
                 continuePulsing(reason);
                 return;
@@ -352,7 +351,7 @@ public class DozeService extends DreamService {
             if (DEBUG) Log.d(mTag, "No more schedule resets remaining");
             return;
         }
-        final long pulseDuration = mDozeParameters.getPulseDuration(DozeLog.PULSE_REASON_NOTIFICATION);
+        final long pulseDuration = mDozeParameters.getPulseDuration(false /*pickup*/);
         if ((notificationTimeMs - mNotificationPulseTime) < pulseDuration) {
             if (DEBUG) Log.d(mTag, "Recently updated, not resetting schedule");
             return;

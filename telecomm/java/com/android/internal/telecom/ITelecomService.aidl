@@ -212,10 +212,10 @@ interface ITelecomService {
     /**
      * @see TelecommManager#getActiveSubscription
      */
-    int getActiveSubscription();
+    long getActiveSubscription();
 
     /**
      * @see TelecommManager#switchToOtherActiveSub
      */
-    void switchToOtherActiveSub(int subId);
+    void switchToOtherActiveSub(long subId);
 }

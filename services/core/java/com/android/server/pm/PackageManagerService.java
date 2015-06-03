@@ -4974,11 +4974,13 @@ public class PackageManagerService extends IPackageManager.Stub {
         if (DEBUG_DEXOPT) {
             Log.i(TAG, "Optimizing app " + curr + " of " + total + ": " + pkg.packageName);
         }
-        try {
-            ActivityManagerNative.getDefault().showBootMessage(
-                    mContext.getResources().getString(R.string.android_upgrading_apk,
-                            curr, total), true);
-        } catch (RemoteException e) {
+        if (!isFirstBoot()) {
+            try {
+                ActivityManagerNative.getDefault().showBootMessage(
+                        mContext.getResources().getString(R.string.android_upgrading_apk,
+                                curr, total), true);
+            } catch (RemoteException e) {
+            }
         }
         PackageParser.Package p = pkg;
         synchronized (mInstallLock) {
@@ -8049,14 +8051,11 @@ public class PackageManagerService extends IPackageManager.Stub {
                     (flags & PackageManager.MATCH_DEFAULT_ONLY) != 0, userId);
             // Remove protected Application components
             int callingUid = Binder.getCallingUid();
-            List<String> packages = Arrays.asList(getPackagesForUid(callingUid));
             if (callingUid != Process.SYSTEM_UID &&
                     (getFlagsForUid(callingUid) & ApplicationInfo.FLAG_SYSTEM) == 0) {
                Iterator<ResolveInfo> itr = list.iterator();
                 while (itr.hasNext()) {
-                    ActivityInfo activityInfo = itr.next().activityInfo;
-                    if (activityInfo.applicationInfo.protect && (packages == null
-                            || !packages.contains(activityInfo.packageName))) {
+                    if (itr.next().activityInfo.applicationInfo.protect) {
                         itr.remove();
                     }
                 }

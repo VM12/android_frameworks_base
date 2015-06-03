@@ -26,6 +26,8 @@ import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
 import android.net.ConnectivityManager;
 import android.nfc.NfcAdapter;
+import android.os.Build;
+import android.os.SystemProperties;
 import android.provider.Settings;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
@@ -100,19 +102,18 @@ public class QSUtils {
                     removeTile = !deviceSupportsCompass(context);
                     break;
                 case QSConstants.TILE_AMBIENT_DISPLAY:
-                    removeTile = !deviceSupportsDoze(context);
+                    removeTile = !isDozeAvailable(context);
                     break;
             }
             if (removeTile) {
                 iterator.remove();
-                tiles.remove(tileKey);
             }
         }
     }
 
     private static void filterTiles(Context context) {
         if (!sAvailableTilesFiltered) {
-            filterTiles(context, QSConstants.TILES_DEFAULT);
+            filterTiles(context, QSConstants.TILES_AVAILABLE);
             sAvailableTilesFiltered = true;
         }
     }
@@ -174,9 +175,12 @@ public class QSUtils {
                 && sm.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD) != null;
     }
 
-    public static boolean deviceSupportsDoze(Context context) {
-        String name = context.getResources().getString(
+    private static boolean isDozeAvailable(Context context) {
+        String name = Build.IS_DEBUGGABLE ? SystemProperties.get("debug.doze.component") : null;
+        if (TextUtils.isEmpty(name)) {
+            name = context.getResources().getString(
                     com.android.internal.R.string.config_dozeComponent);
+        }
         return !TextUtils.isEmpty(name);
     }
 }

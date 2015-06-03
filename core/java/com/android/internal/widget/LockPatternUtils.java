@@ -1604,7 +1604,7 @@ public class LockPatternUtils {
         final boolean secure =
                 isPattern && isLockPatternEnabled(userId) && savedPatternExists(userId)
                 || isPassword && savedPasswordExists(userId);
-        return secure && getActiveProfileLockMode() != Profile.LockMode.DISABLE;
+        return secure && getActiveProfileLockMode() == Profile.LockMode.DEFAULT;
     }
 
     public int getActiveProfileLockMode() {

@@ -437,11 +437,9 @@ public class KeyguardSimPukView extends KeyguardPinBasedInputView {
 
         mSubNameView.setText(displayName);
 
-        if (mKgUpdateMonitor.getNumPhones() > 1) {
-            final int color = info != null && info.getIconTint() != 0
-                    ? info.getIconTint() : Color.WHITE;
-            mSimImageView.setImageTintList(ColorStateList.valueOf(color));
-        }
+        final int color = info != null && info.getIconTint() != 0
+                ? info.getIconTint() : Color.WHITE;
+        mSimImageView.setImageTintList(ColorStateList.valueOf(color));
     }
 
     private void showDefaultMessage() {

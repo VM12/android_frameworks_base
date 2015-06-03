@@ -904,9 +904,6 @@ public class RequestThreadManager {
                         mDeviceState.setError(
                                 CameraDeviceImpl.CameraDeviceCallbacks.ERROR_CAMERA_DEVICE);
                     }
-                    if (mPreviewTexture != null) {
-                        mPreviewTexture.setOnFrameAvailableListener(null);
-                    }
                     if (mGLThreadManager != null) {
                         mGLThreadManager.quit();
                         mGLThreadManager = null;

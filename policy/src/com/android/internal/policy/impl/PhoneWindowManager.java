@@ -867,6 +867,9 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             resolver.registerContentObserver(Settings.System.getUriFor(
                     Settings.System.NAVBAR_LEFT_IN_LANDSCAPE), false, this,
                     UserHandle.USER_ALL);
+            resolver.registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.NAVIGATION_BAR_HEIGHT), false, this,
+                    UserHandle.USER_ALL);
             updateSettings();
         }
 
@@ -1977,6 +1980,25 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                     ((mDeviceHardwareWakeKeys & KEY_MASK_VOLUME) != 0);
             mVolBtnMusicControls = (Settings.System.getIntForUser(resolver,
                     Settings.System.VOLBTN_MUSIC_CONTROLS, 1, UserHandle.USER_CURRENT) == 1);
+
+            // navigation bar height
+            int mNavigationBarHeight = Settings.System.getInt(resolver,
+                    Settings.System.NAVIGATION_BAR_HEIGHT, 48);
+            mNavigationBarHeightForRotation[mPortraitRotation] =
+                    mNavigationBarHeightForRotation[mUpsideDownRotation] =
+                            mNavigationBarHeight * DisplayMetrics.DENSITY_DEVICE
+                                    / DisplayMetrics.DENSITY_DEFAULT;
+            mNavigationBarHeightForRotation[mLandscapeRotation] =
+                    mNavigationBarHeightForRotation[mSeascapeRotation] =
+                            mNavigationBarHeight * DisplayMetrics.DENSITY_DEVICE
+                                    / DisplayMetrics.DENSITY_DEFAULT;
+            mNavigationBarWidthForRotation[mPortraitRotation] =
+                    mNavigationBarWidthForRotation[mUpsideDownRotation] =
+                            mNavigationBarWidthForRotation[mLandscapeRotation] =
+                                    mNavigationBarWidthForRotation[mSeascapeRotation] =
+                                            (mNavigationBarHeight - 6)
+                                                    * DisplayMetrics.DENSITY_DEVICE
+                                                    / DisplayMetrics.DENSITY_DEFAULT;
 
             // Configure wake gesture.
             boolean wakeGestureEnabledSetting = Settings.Secure.getIntForUser(resolver,
@@ -5023,10 +5045,6 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             mStatusBar.getAttrs().flags &= ~FLAG_SHOW_WALLPAPER;
             return true;
         } else {
-            if (wasOccluded && !isOccluded && !showing) {
-                mKeyguardOccluded = false;
-                mKeyguardDelegate.setOccluded(false);
-            }
             return false;
         }
     }
@@ -6731,21 +6749,9 @@ public class PhoneWindowManager implements WindowManagerPolicy {
         mPowerManager.setKeyboardVisibility(isBuiltInKeyboardVisible());
 
         if (mLidState == LID_CLOSED && mLidControlsSleep) {
-            if (mFocusedWindow != null && (mFocusedWindow.getAttrs().flags
-                    & WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON) != 0) {
-                // if an application requests that the screen be turned on
-                // and there's a closed device cover, don't turn the screen off!
-                return;
-            }
-
-            TelecomManager telephonyService = getTelecommService();
-            if (!(telephonyService == null
-                    || telephonyService.isRinging())) {
-                mPowerManager.goToSleep(SystemClock.uptimeMillis(),
-                        PowerManager.GO_TO_SLEEP_REASON_LID_SWITCH,
-                        PowerManager.GO_TO_SLEEP_FLAG_NO_DOZE);
-            }
-
+            mPowerManager.goToSleep(SystemClock.uptimeMillis(),
+                    PowerManager.GO_TO_SLEEP_REASON_LID_SWITCH,
+                    PowerManager.GO_TO_SLEEP_FLAG_NO_DOZE);
         }
 
         synchronized (mLock) {

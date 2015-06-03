@@ -565,19 +565,6 @@ public final class Settings {
 
     /**
      * @hide
-     * Activity Action: Show the "app ops" details screen.
-     * <p>
-     * Input: The Intent's data URI specifies the application package name
-     * to be shown, with the "package" scheme.  That is "package:com.my.app".
-     * <p>
-     * Output: Nothing.
-     */
-    @SdkConstant(SdkConstantType.ACTIVITY_INTENT_ACTION)
-    public static final String ACTION_APP_OPS_DETAILS_SETTINGS =
-            "android.settings.APP_OPS_DETAILS_SETTINGS";
-
-    /**
-     * @hide
      * Activity Action: Show the "app ops" settings screen.
      * <p>
      * Input: Nothing.
@@ -3533,11 +3520,10 @@ public final class Settings {
         public static final String ALLOW_LIGHTS = "allow_lights";
 
         /**
-         * Volume key controls ringtone or media sound stream
+         * Navigation bar height
          * @hide
          */
-        public static final String VOLUME_KEYS_CONTROL_RING_STREAM =
-                "volume_keys_control_ring_stream";
+        public static final String NAVIGATION_BAR_HEIGHT = "navigation_bar_height";
 
         /**
          * Settings to backup. This is here so that it's in the same place as the settings
@@ -5923,6 +5909,12 @@ public final class Settings {
          * @hide
          */
         public static final String PRIVACY_GUARD_DEFAULT = "privacy_guard_default";
+
+        /**
+         * Whether privacy guard notification should show.
+         * @hide
+         */
+        public static final String PRIVACY_GUARD_NOTIFICATION = "privacy_guard_notification";
 
         /**
          * Default theme to use.  If empty, use holo.
