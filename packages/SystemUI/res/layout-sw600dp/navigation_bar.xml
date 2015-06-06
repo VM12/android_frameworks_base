@@ -40,10 +40,9 @@
             >
 
             <include layout="@layout/mid_navigation_bar_port"/>
-
         </LinearLayout>
 
-       <LinearLayout
+        <LinearLayout
             android:layout_height="match_parent"
             android:layout_width="match_parent"
             android:orientation="horizontal"
