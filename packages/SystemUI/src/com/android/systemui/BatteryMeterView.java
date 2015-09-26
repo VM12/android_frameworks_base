@@ -127,7 +127,7 @@ public class BatteryMeterView extends View implements DemoMode,
                 health = intent.getIntExtra(BatteryManager.EXTRA_HEALTH,
                         BatteryManager.BATTERY_HEALTH_UNKNOWN);
                 status = intent.getIntExtra(BatteryManager.EXTRA_STATUS,
-                        BatteryManager.BATTERY_STATUS_UNKNOWN);
+                        BatteryManager.BATTERY_STATUS_UNKNOWN); 
                 technology = intent.getStringExtra(BatteryManager.EXTRA_TECHNOLOGY);
                 voltage = intent.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0);
                 temperature = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0);
@@ -863,8 +863,6 @@ public class BatteryMeterView extends View implements DemoMode,
             if (unknownStatus) {
                 mTextPaint.setColor(paint.getColor());
                 canvas.drawText("?", textX, mTextY, mTextPaint);
-
-            } else if (tracker.plugged) {
                 // draw the bolt
                 final float bl = (int)(drawRect.left + drawRect.width() / 3.2f);
                 final float bt = (int)(drawRect.top + drawRect.height() / 4f);

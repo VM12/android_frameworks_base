@@ -19,6 +19,7 @@ package com.android.systemui.volume;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
+import android.animation.LayoutTransition;
 import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.BroadcastReceiver;
@@ -66,6 +67,8 @@ import android.view.WindowManager;
 import android.view.WindowManager.LayoutParams;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityManager;
+import android.view.animation.AccelerateInterpolator;
+import android.view.animation.DecelerateInterpolator;
 import android.view.animation.AnimationUtils;
 import android.view.animation.Interpolator;
 import android.widget.ImageView;
@@ -111,6 +114,7 @@ public class VolumePanel extends Handler implements DemoMode {
     private static final int TIMEOUT_DELAY_COLLAPSED = 4500;
     private static final int TIMEOUT_DELAY_SAFETY_WARNING = 5000;
     private static final int TIMEOUT_DELAY_EXPANDED = 10000;
+    private static final int ANIMATION_DURATION = 350; // ms
 
     private static final int MSG_VOLUME_CHANGED = 0;
     private static final int MSG_FREE_RESOURCES = 1;
@@ -495,6 +499,11 @@ public class VolumePanel extends Handler implements DemoMode {
             window.findViewById(com.android.systemui.R.id.zen_buttons_container)
                 .setBackground(null);
         }
+
+        LayoutTransition lt = new LayoutTransition();
+        lt.disableTransitionType(LayoutTransition.CHANGE_DISAPPEARING);
+        lt.disableTransitionType(LayoutTransition.DISAPPEARING);
+        mSliderPanel.setLayoutTransition(lt);
     }
 
     public VolumePanel(Context context, ZenModeController zenController) {
@@ -1336,16 +1345,30 @@ public class VolumePanel extends Handler implements DemoMode {
         if (!isShowing()) {
             int stream = (streamType == STREAM_REMOTE_MUSIC) ? -1 : streamType;
             // when the stream is for remote playback, use -1 to reset the stream type evaluation
-            if (mDialog != null) {
-                mDialog.show();
-            }
             if (stream != STREAM_MASTER) {
                 mAudioManager.forceVolumeControlStream(stream);
             }
-            if (mCallback != null) {
-                mCallback.onVisible(true);
+            mDialog.show();
+            Runnable r = new Runnable() {
+                public void run() {
+                    mView.setY(-mView.getHeight());
+                    mView.animate().y(0).setDuration(ANIMATION_DURATION)
+                            .setInterpolator(new DecelerateInterpolator())
+                            .withEndAction(new Runnable() {
+                        public void run() {
+                            if (mCallback != null) {
+                                mCallback.onVisible(true);
+                            }
+                            announceDialogShown();
+                        }
+                    });
+                }
+            };
+            if (mView.getHeight() == 0) {
+                new Handler().post(r);
+            } else {
+                r.run();
             }
-            announceDialogShown();
         }
 
         // Do a little vibrate if applicable (only when going into vibrate mode)
@@ -1599,14 +1622,21 @@ public class VolumePanel extends Handler implements DemoMode {
 
             case MSG_TIMEOUT: {
                 if (isShowing()) {
-                    hideVolumePanel();
                     if (mDialog != null) {
-                        mDialog.dismiss();
-                        clearRemoteStreamController();
-                        mActiveStreamType = -1;
-                        if (mCallback != null) {
-                            mCallback.onVisible(false);
-                        }
+                        mView.animate().y(-mView.getHeight())
+                                .setDuration(ANIMATION_DURATION)
+                                .setInterpolator(new AccelerateInterpolator())
+                                .withEndAction(new Runnable() {
+                            public void run() {
+                                hideVolumePanel();
+                                mDialog.dismiss();
+                                clearRemoteStreamController();
+                                mActiveStreamType = -1;
+                                if (mCallback != null) {
+                                    mCallback.onVisible(false);
+                                }
+                            }
+                        });
                     }
                 }
                 synchronized (sSafetyWarningLock) {

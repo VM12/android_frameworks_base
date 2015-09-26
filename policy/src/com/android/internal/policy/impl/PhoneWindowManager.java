@@ -3082,7 +3082,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                     mHomeDoubleTapPending = false;
                     mHandler.removeCallbacks(mHomeDoubleTapTimeoutRunnable);
                     performKeyAction(mDoubleTapOnHomeBehavior);
-                    mHomeConsumed = true;
+                    mHomeConsumed = mDoubleTapOnHomeBehavior != KEY_ACTION_SLEEP;
                 } else if (mLongPressOnHomeBehavior == KEY_ACTION_APP_SWITCH
                         || mDoubleTapOnHomeBehavior == KEY_ACTION_APP_SWITCH) {
                     preloadRecentApps();
@@ -6651,7 +6651,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                     mBootMsgDialog.setCancelable(false);
                     mBootMsgDialog.show();
                 }
-                mBootMsgDialog.setMessage("Powered By Team-Nocturnal\n\n" + msg
+                mBootMsgDialog.setMessage("VM12 Roms Powered By Team-Nocturnal\n\n" + msg
                 + "\n\nPlease wait while we Nocturnalize your phone.");
             }
         });

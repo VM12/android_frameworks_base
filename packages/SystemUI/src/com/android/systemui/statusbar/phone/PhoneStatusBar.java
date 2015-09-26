@@ -143,6 +143,7 @@ import com.android.systemui.EventLogConstants;
 import com.android.systemui.EventLogTags;
 import com.android.systemui.FontSizeUtils;
 import com.android.systemui.R;
+import com.android.systemui.cm.StatusBarHeaderMachine;
 import com.android.systemui.cm.UserContentObserver;
 import com.android.systemui.doze.DozeHost;
 import com.android.systemui.doze.DozeLog;
@@ -464,6 +465,12 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
                     Settings.System.NAVBAR_LEFT_IN_LANDSCAPE), false, this, UserHandle.USER_ALL);
             resolver.registerContentObserver(Settings.Secure.getUriFor(
                     Settings.Secure.RECENTS_LONG_PRESS_ACTIVITY), false, this);
+            resolver.registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.LOCKSCREEN_ROTATION),
+                    false, this, UserHandle.USER_ALL);
+            resolver.registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.ACCELEROMETER_ROTATION),
+                    false, this, UserHandle.USER_ALL);
             update();
         }
 
@@ -518,6 +525,8 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
                         Settings.System.NAVBAR_LEFT_IN_LANDSCAPE, 0, UserHandle.USER_CURRENT) == 1;
                 mNavigationBarView.setLeftInLandscape(navLeftInLandscape);
             }
+ 
+            mStatusBarWindowManager.updateKeyguardScreenRotation();
 
             // This method reads Settings.Secure.RECENTS_LONG_PRESS_ACTIVITY
             updateCustomRecentsLongPressHandler(false);
@@ -669,6 +678,7 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
     private ViewMediatorCallback mKeyguardViewMediatorCallback;
     private ScrimController mScrimController;
     private DozeScrimController mDozeScrimController;
+    private StatusBarHeaderMachine mStatusBarHeaderMachine;
 
     private final Runnable mAutohide = new Runnable() {
         @Override
@@ -1312,6 +1322,10 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
                 new Intent(pm.isScreenOn() ? Intent.ACTION_SCREEN_ON : Intent.ACTION_SCREEN_OFF));
 
         startGlyphRasterizeHack();
+
+        mStatusBarHeaderMachine = new StatusBarHeaderMachine(mContext);
+        mStatusBarHeaderMachine.addObserver(mHeader);
+        mStatusBarHeaderMachine.updateEnablement();
         return mStatusBarView;
     }
 
@@ -3817,6 +3831,9 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode,
         updateNotifications();
         resetUserSetupObserver();
         setControllerUsers();
+
+        SettingsObserver observer = new SettingsObserver(mHandler);
+        observer.update();
 
         WallpaperManager wm = (WallpaperManager)
                 mContext.getSystemService(Context.WALLPAPER_SERVICE);
